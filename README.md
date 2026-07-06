@@ -16,23 +16,23 @@ A clean, from-scratch full-stack implementation of an Indian household utility s
 
 ## 🛠️ System Architecture & Tech Stack
 ┌─────────────────────────────────────────────────────────┐
-   │                  FRONTEND (React Client)                │
-   │    Tailwind CSS Engine  │  Dynamic Matrix Control Grid  │
-   └────────────────────┬──────────────▲─────────────────────┘
-                        │              │
-             REST Requests (JSON)   State Synchronization
-                        │              │
-   ┌────────────────────▼──────────────┴─────────────────────┐
-   │               BACKEND (Express Node Server)             │
-   │  API Routing Matrix │ Cron Scheduler │ Browser Engine   │
-   └────────────────────┬──────────────▲─────────────────────┘
-                        │              │
-                   SQL Queries    Database Rows
-                        │              │
-   ┌────────────────────▼──────────────┴─────────────────────┐
-   │                  DATABASE (SQLite Engine)               │
-   │       Accounts Records    │    Bills Ledger Sheets      │
-   └─────────────────────────────────────────────────────────┘
+│                  FRONTEND (React Client)                │
+│    Tailwind CSS Engine  │  Dynamic Matrix Control Grid  │
+└────────────────────┬──────────────▲─────────────────────┘
+                     │              │
+           REST Requests (JSON)   State Synchronization
+                     │              │
+┌────────────────────▼──────────────┴─────────────────────┐
+│               BACKEND (Express Node Server)             │
+│  API Routing Matrix │ Cron Scheduler │ Browser Engine   │
+└────────────────────┬──────────────▲─────────────────────┘
+                     │              │
+                  SQL Queries    Database Rows
+                     │              │
+┌────────────────────▼──────────────┴─────────────────────┐
+│                  DATABASE (SQLite Engine)               │
+│       Accounts Records    │    Bills Ledger Sheets      │
+└─────────────────────────────────────────────────────────┘
 
 * **Frontend Interface:** Single-page architecture built using React 18, utilizing Tailwind CSS for high-contrast dark-mode matrices and unified slate typography tokens—completely free of heavy local build tools or bundler configurations.
 * **Backend Server:** Node.js framework running Express middleware to handle strict REST API parameters.
@@ -159,7 +159,7 @@ The server serves REST endpoints under the prefix `http://localhost:4000/api/bil
   "accountsCount": 2,
   "activeAlertsCount": 1
 }
-
+```
 Computed Phase,Trigger / Timeline,UI Visual Matrix Treatment
 NORMAL,More than 7 days remaining until deadline,"Neutral baseline display, safe operations badge."
 ACTION,Less than or equal to 3 days remaining,"Orange warning container badge, displays standard base vs target cost metrics."
