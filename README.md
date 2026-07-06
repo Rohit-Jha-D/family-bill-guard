@@ -1,35 +1,85 @@
-# Family Bill Tracker
+# 🛡️ Family Bill Guard — Fine Prevention Sentinel
 
-A clean, from-scratch implementation of a Family Bill Tracker: track bills across
-multiple household accounts (nicknamed "My House", "Parents' Home", etc.), get
-staged reminders as due dates approach, and pay directly via official UPI/portal
-links — no third-party payment gateways in the middle.
+A clean, from-scratch full-stack implementation of an Indian household utility statement organizer and automation pipeline. This application actively tracks consumer lines across state utility portals, manages payment cycles, applies multi-criteria filter matrices, calculates dynamic late-fine notification phases, and facilitates instant native UPI or direct portal routing without third-party aggregator middleman markup.
 
-> Built independently from the feature spec — this is not extracted from any
-> third-party preview app, since no source code was accessible from that link.
+![Application Dashboard Preview](image/{Dashboard with Bill Status preview}.png)
 
-## Stack
+---
 
-- **Backend:** Node.js + Express + SQLite (`better-sqlite3`, zero external DB setup)
-- **Frontend:** Single-file React app (via CDN) + Tailwind CSS — no build step required
-- **Scheduler:** `node-cron` mock job simulating daily notification sweeps
+## 🚀 Key Architectural Features
+* **Dual-Engine Tracking:** Blends background automated headless browser execution with manual direct-portal fallbacks for strict captcha security validation gates.
+* **Dynamic Matrix Filtering:** Client-side state control filters items instantly by unique property nicknames, provider service categories, and payment statuses.
+* **Risk-Phased Alerts:** Automatically scales invoice urgency badges (`STATEMENT ACTIVE` ➔ `FINE WINDOW OPEN` ➔ `URGENT DEADLINE`) based on localized target dates.
+* **Account Inventory Matrix:** A dedicated master management panel allowing direct database registry manipulation and cascade deletions.
 
-## Project structure
+---
+
+## 🛠️ System Architecture & Tech Stack
+┌─────────────────────────────────────────────────────────┐
+   │                  FRONTEND (React Client)                │
+   │    Tailwind CSS Engine  │  Dynamic Matrix Control Grid  │
+   └────────────────────┬──────────────▲─────────────────────┘
+                        │              │
+             REST Requests (JSON)   State Synchronization
+                        │              │
+   ┌────────────────────▼──────────────┴─────────────────────┐
+   │               BACKEND (Express Node Server)             │
+   │  API Routing Matrix │ Cron Scheduler │ Browser Engine   │
+   └────────────────────┬──────────────▲─────────────────────┘
+                        │              │
+                   SQL Queries    Database Rows
+                        │              │
+   ┌────────────────────▼──────────────┴─────────────────────┐
+   │                  DATABASE (SQLite Engine)               │
+   │       Accounts Records    │    Bills Ledger Sheets      │
+   └─────────────────────────────────────────────────────────┘
+
+* **Frontend Interface:** Single-page architecture built using React 18, utilizing Tailwind CSS for high-contrast dark-mode matrices and unified slate typography tokens—completely free of heavy local build tools or bundler configurations.
+* **Backend Server:** Node.js framework running Express middleware to handle strict REST API parameters.
+* **Automation Driver:** Playwright (Chromium engine) orchestrating background portal navigation, form inputs, and selector text scraper extraction.
+* **Persistent Storage:** SQLite database file (`db.js`) executing relational row adjustments without the overhead of external server containers.
+
+---
+
+## 🔄 Core Application Workflows
+
+### 1. Account Profile Registration Workflow
+* **Step A:** The user clicks `➕ Add Account` on the interface and inputs reference details (Nickname, Category, Consumer ID Number, Portal URL, and UPI VPA payee details).
+* **Step B:** The client sends a `POST` request to `/api/bills/accounts`.
+* **Step C:** The backend updates the SQLite tables and instantly activates a background worker process to scrape any existing outstanding statement entries for that line.
+
+### 2. Automated Real-Time Scraper Sync Workflow
+* **Step A:** The sync cycle triggers either via an automatic timed system cron or manually by clicking the `⚙️ Run Cron` control button.
+* **Step B:** The engine loops through accounts and spins up a sandboxed Playwright browser context.
+* **Step C:** For sites like **NBPDCL (North Bihar)**, it fills out forms automatically, hits selectors, and reads the live due balance right off the screen.
+* **Step D:** For secure visual validation portals like **TNPDCL/TANGEDCO (Tamil Nadu)**, the engine logs a safe tracking bypass notice. This prevents timeout flags, keeping your backend green while smoothly routing users to their 5-second manual captcha dashboard check.
+
+### 3. Settle & Payment History Ledger Workflow
+* **Step A:** Clicking `Pay Now` calculates the net balances and launches the Outbound Direct Handoff Link Modal.
+* **Step B:** Selecting `Launch Native UPI App Intent` builds a secure `upi://pay` custom URI with exact URL parameters (`pa`, `pn`, `am`, `cu=INR`) to execute on mobile devices. Clicking `Maps Official Provider Portal` opens the provider page directly.
+* **Step C:** The action flags a `POST` query to `/api/bills/:id/pay`, automatically archiving the bill row as `paid`, assigning a confirmation timestamp, and purging active warnings instantly.
+
+### 4. Master Account Inventory Deletion Workflow
+* **Step A:** Navigating to the `🛠️ Manage Accounts` workspace exposes all registered utility profiles directly from the core relational tables.
+* **Step B:** Clicking `🗑️ Remove Account` triggers a confirmation banner.
+* **Step C:** On approval, an HTTP `DELETE` instruction lands at `/api/bills/accounts/:id`. The database cleans out the account row and launches a cascade delete to clear any pending, unpaid statements tied to that reference ID.
+
+---
+## 📂 Project Directory Structure
 
 ```
 family-bill-tracker/
 ├── backend/
-│   ├── server.js              # Express entry point
-│   ├── db.js                  # SQLite schema
-│   ├── seed.js                # Sample data
-│   ├── routes/bills.js        # All API routes
-│   ├── services/
-│   │   ├── notifications.js   # 4-phase notification logic
-│   │   ├── payments.js        # Secure UPI/portal deep-link generator
-│   │   └── cron.js            # Mock cron job + instant alert cancellation
-│   └── data/                  # SQLite .db file lives here (gitignored)
+│   ├── server.js              # Express app entry point & middleware configurations
+│   ├── db.js                  # SQLite database connection & schema configuration
+│   ├── seed.js                # Initial database population file
+│   ├── bills.db               # Local SQLite database file (Gitignored)
+│   ├── routes/
+│   │   └── bills.js          # Main router (Automation engine, CRUD endpoints, and DELETE cascade)
+│   └── services/
+│       └── notifications.js   # Dynamic risk-phased late fine notification algorithm
 └── frontend/
-    └── index.html             # Dashboard UI (React + Tailwind, no build step)
+    └── index.html             # Client dashboard (React 18 + Tailwind Dark Mode Interface)
 ```
 
 ## Running locally
@@ -39,7 +89,8 @@ family-bill-tracker/
 ```bash
 cd backend
 npm install
-npm run seed     # populates sample accounts/bills/history
+npx playwright install chromium
+node seed.js
 npm start        # starts API on http://localhost:4000
 ```
 
@@ -68,79 +119,51 @@ Then open the URL it gives you (e.g. `http://localhost:3000`). The dashboard
 talks to the backend at `http://localhost:4000/api` (edit the `API_BASE`
 constant at the top of `index.html` if you change the backend port).
 
-## API reference
+## 🔌 API Reference Matrix
 
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/accounts` | List all account nicknames + raw account rows |
-| GET | `/api/bills?nickname=My House` | Bills for a nickname, enriched with notification phase + `zero_pending` flag |
-| GET | `/api/history?nickname=My House` | Payment history ledger for a nickname |
-| GET | `/api/bills/:id/payment-link` | Generates a secure UPI/official-portal hand-off link |
-| POST | `/api/bills/:id/pay` | Marks a bill paid, logs history, cancels alerts instantly |
+The server serves REST endpoints under the prefix `http://localhost:4000/api/bills`.
 
-### Example: filtering bills by nickname
+| Method | Route Path | Functional Description |
+| :--- | :--- | :--- |
+| **GET** | `/accounts` | Retrieves all registered asset profiles directly from the master database table. |
+| **GET** | `/dashboard` | Fetches consolidated metrics (Total Pending, Alerts Count) along with fully filtered bills arrays. Supports `?nickname=`, `?category=`, and `?status=` query strings. |
+| **POST** | `/accounts` | Registers a new utility profile and triggers an immediate background scraper pass. |
+| **POST** | `/` | Logs a manual un-settled utility statement entry. |
+| **POST** | `/:id/pay` | Settles an invoice manually, archives the record status as paid, and populates the history ledger logs. |
+| **POST** | `/run-cron` | Instantly spins up the headless automation web scraper browser workflow. |
+| **DELETE**| `/accounts/:id` | Cascades out a profile record and purges its pending statements from database disk memory. |
 
-```bash
-curl "http://localhost:4000/api/bills?nickname=My%20House"
-```
-
+### Client Payload Response Example (`GET /api/bills/dashboard`)
 ```json
 {
-  "nickname": "My House",
-  "zero_pending": false,
-  "total_bills": 2,
-  "pending_count": 1,
+  "nicknames": ["Parents' Home", "house 2"],
+  "categories": ["Electricity", "Water", "Gas", "Internet", "Municipal/Home Tax"],
   "bills": [
     {
       "id": 1,
-      "amount": 1420.5,
+      "account_id": 2,
+      "amount": 2450.00,
       "due_date": "2026-07-07",
       "status": "pending",
-      "late_fine_amount": 100,
-      "notification_phase": "URGENT",
-      "days_remaining": 1,
-      "show_fine_warning": true,
-      "amount_breakdown": { "standard_amount": 1420.5, "fine_amount": 100, "total_with_fine": 1520.5 }
+      "late_fine_amount": 50.00,
+      "account_nickname": "Parents' Home",
+      "category": "Electricity",
+      "consumer_number": "2008471192",
+      "official_vpa": "biller@upi",
+      "portal_url": "[https://www.nbpdcl.co.in](https://www.nbpdcl.co.in)",
+      "notification_phase": "URGENT"
     }
-  ]
+  ],
+  "totalPendingAmount": 2450.00,
+  "totalPendingCount": 1,
+  "accountsCount": 2,
+  "activeAlertsCount": 1
 }
-```
 
-## Notification phases
+Computed Phase,Trigger / Timeline,UI Visual Matrix Treatment
+NORMAL,More than 7 days remaining until deadline,"Neutral baseline display, safe operations badge."
+ACTION,Less than or equal to 3 days remaining,"Orange warning container badge, displays standard base vs target cost metrics."
+URGENT,Less than or equal to 24 hours remaining,Red critical accent container layout with flashing warning indicators.
+OVERDUE,Past scheduled deadline target date,Locked high-priority warning layout with base cost + late fees applied.
+—,status = 'paid',"All active warning badges are instantly stripped, updating rows to a calm green ""✓ Settled"" layout state."
 
-Computed purely from `due_date - current_date` in `services/notifications.js`:
-
-| Phase | Trigger | UI treatment |
-|---|---|---|
-| `GENERATED` | Bill just created, > 7 days out | Neutral badge |
-| `EARLY` | ≤ 7 days remaining | Blue badge |
-| `ACTION` | ≤ 3 days remaining | Orange alert box, shows Standard vs Standard+Fine |
-| `URGENT` | ≤ 24 hours remaining | Red banner, urgent card styling |
-| `OVERDUE` | Past due date | Red banner, fine applied |
-| — | `status = 'paid'` | **All alerts cancelled instantly**, regardless of date |
-
-The cron job (`services/cron.js`) re-sweeps every bill on an interval (every
-minute for the demo — switch the cron expression to `'0 8 * * *'` for a real
-daily run) and only re-notifies when a bill's phase changes, so you don't get
-duplicate alerts.
-
-## Payment security model
-
-`services/payments.js` only ever builds a link from data already trusted in
-your own `accounts` table:
-
-- If the account has a `provider_vpa`, it generates a `upi://pay?pa=...` intent
-  link that opens the user's own UPI app directly against the official biller.
-- If no VPA is on file, it falls back to the account's `provider_portal_url`
-  (the biller's own website).
-- If neither exists, it refuses to generate a link rather than guessing one.
-
-No aggregator, wallet, or third-party gateway URL is ever constructed by this
-code path.
-
-## Notes on the "Historical Ledger"
-
-`payment_history` is intentionally separate from `bills` so that once a bill
-is marked paid, its payment details are simultaneously (a) reflected on the
-current bill card as "Paid", and (b) permanently recorded in the ledger tab —
-even if you later delete or archive old `bills` rows.
