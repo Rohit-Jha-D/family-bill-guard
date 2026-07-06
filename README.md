@@ -2,7 +2,7 @@
 
 A clean, from-scratch full-stack implementation of an Indian household utility statement organizer and automation pipeline. This application actively tracks consumer lines across state utility portals, manages payment cycles, applies multi-criteria filter matrices, calculates dynamic late-fine notification phases, and facilitates instant native UPI or direct portal routing without third-party aggregator middleman markup.
 
-![Application Dashboard Preview](images/{Dashboard with Bill Status}.png)
+![Application Dashboard Preview](images/{dashboard}.png)
 
 ---
 
