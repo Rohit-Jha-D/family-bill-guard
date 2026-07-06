@@ -1,0 +1,9 @@
+# Node Modules packages cache
+node_modules/
+
+# Local database engine instances
+backend/bills.db
+
+# OS cache logs
+.DS_Store
+Thumbs.db

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Bill Guard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+</head>
+<body class="bg-[#FAF9F6] text-[#2C3E50] dark:bg-[#121824] dark:text-[#E2E8F0] font-sans antialiased transition-colors duration-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const API_BASE = "http://localhost:4000/api/bills";
+
+        function App() {
+            const [darkMode, setDarkMode] = React.useState(() => localStorage.getItem("billGuardTheme") === "dark");
+            const [metrics, setMetrics] = React.useState({ totalPendingAmount: 0, totalPendingCount: 0, accountsCount: 0, activeAlertsCount: 0 });
+            const [nicknames, setNicknames] = React.useState([]);
+            const [categories, setCategories] = React.useState([]);
+            const [bills, setBills] = React.useState([]);
+            const [rawAccountsList, setRawAccountsList] = React.useState([]); 
+
+            const [activeTab, setActiveTab] = React.useState("active-bills"); 
+            const [showAccountModal, setShowAccountModal] = React.useState(false);
+            const [showBillModal, setShowBillModal] = React.useState(false);
+            const [paymentModal, setPaymentModal] = React.useState(null);
+
+            const [selectedNickname, setSelectedNickname] = React.useState("");
+            const [selectedCategory, setSelectedCategory] = React.useState("");
+            const [selectedStatus, setSelectedStatus] = React.useState("");
+
+            const [accForm, setAccForm] = React.useState({ nickname: "", category: "", customCategory: "", consumerNum: "", url: "", vpa: "" });
+            const [billForm, setBillForm] = React.useState({ accountId: "", amount: "", dueDate: "", fine: "" });
+
+            React.useEffect(() => {
+                if (darkMode) {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem("billGuardTheme", "dark");
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem("billGuardTheme", "light");
+                }
+            }, [darkMode]);
+
+            const refreshDashboard = async () => {
+                let query = new URLSearchParams();
+                if (selectedNickname) query.append("nickname", selectedNickname);
+                if (selectedCategory) query.append("category", selectedCategory);
+                
+                if (selectedStatus) {
+                    query.append("status", selectedStatus);
+                } else {
+                    if (activeTab === "payment-history") query.append("status", "paid");
+                    else if (activeTab === "active-bills" || activeTab === "alerts") query.append("status", "pending");
+                }
+
+                const res = await fetch(`${API_BASE}/dashboard?${query.toString()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setMetrics({
+                        totalPendingAmount: data.totalPendingAmount,
+                        totalPendingCount: data.totalPendingCount,
+                        accountsCount: data.accountsCount,
+                        activeAlertsCount: data.activeAlertsCount
+                    });
+                    setNicknames(data.nicknames || []);
+                    setCategories(data.categories || []);
+                    
+                    if (activeTab === "alerts" && !selectedStatus) {
+                        setBills((data.bills || []).filter(b => ['ACTION', 'URGENT', 'OVERDUE'].includes(b.notification_phase)));
+                    } else {
+                        setBills(data.bills || []);
+                    }
+                }
+
+                // FETCH ACCOUNTS DIRECTLY FROM THE NEW ACC INFRASTRUCTURE ROUTE
+                const accountsRes = await fetch(`${API_BASE}/accounts`);
+                if (accountsRes.ok) {
+                    const accountsData = await accountsRes.json();
+                    setRawAccountsList(accountsData);
+                }
+            };
+
+            React.useEffect(() => { refreshDashboard(); }, [selectedNickname, selectedCategory, selectedStatus, activeTab]);
+
+            const triggerCronSync = async () => {
+                const res = await fetch(`${API_BASE}/run-cron`, { method: 'POST' });
+                if (res.ok) { refreshDashboard(); alert("Portals synchronized successfully!"); }
+            };
+
+            const submitAccount = async (e) => {
+                e.preventDefault();
+                const categoryValue = accForm.category === "Custom" ? accForm.customCategory : accForm.category;
+                await fetch(`${API_BASE}/accounts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_nickname: accForm.nickname,
+                        category: categoryValue,
+                        consumer_number: accForm.consumerNum,
+                        portal_url: accForm.url,
+                        official_vpa: accForm.vpa
+                    })
+                });
+                setShowAccountModal(false);
+                setAccForm({ nickname: "", category: "", customCategory: "", consumerNum: "", url: "", vpa: "" });
+                refreshDashboard();
+            };
+
+            const removeAccountLine = async (id) => {
+                if (confirm("Are you sure you want to remove this account? This will also clear its pending bills from your view.")) {
+                    const res = await fetch(`${API_BASE}/accounts/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        refreshDashboard();
+                    }
+                }
+            };
+
+            const submitBill = async (e) => {
+                e.preventDefault();
+                await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: billForm.accountId,
+                        amount: parseFloat(billForm.amount),
+                        due_date: billForm.dueDate,
+                        late_fine_amount: parseFloat(billForm.fine || 0)
+                    })
+                });
+                setShowBillModal(false);
+                setBillForm({ accountId: "", amount: "", dueDate: "", fine: "" });
+                refreshDashboard();
+            };
+
+            const executePayment = async (id) => {
+                await fetch(`${API_BASE}/${id}/pay`, { method: 'POST' });
+                setPaymentModal(null);
+                refreshDashboard();
+            };
+
+            return (
+                <div class="max-w-7xl mx-auto p-4 md:p-8">
+                    {/* UPPER CONTROL HEADER BAR */}
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                        <div class="flex items-center justify-between w-full sm:w-auto gap-8">
+                            <div>
+                                <span class="text-sm font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase">Family Bill Guard</span>
+                                <h2 class="text-xs text-slate-500 dark:text-slate-400 font-mono">FINE PREVENTION · INDIA</h2>
+                            </div>
+                            <button onClick={() => setDarkMode(!darkMode)} class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] shadow-xs text-sm">
+                                {darkMode ? '☀️ Light' : '🌙 Night'}
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                            <button onClick={triggerCronSync} class="border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-white dark:bg-[#1E293B] font-semibold text-sm py-2 px-4 rounded-xl shadow-xs hover:bg-slate-50 dark:hover:bg-slate-700 transition">⚙️ Run Cron</button>
+                            <button onClick={()=>setShowAccountModal(true)} class="bg-[#244235] text-white font-bold text-sm py-2 px-4 rounded-xl shadow transition hover:bg-[#1b3329]">➕ Add Account</button>
+                            <button onClick={()=>setShowBillModal(true)} class="bg-[#7F8C8D] dark:bg-slate-600 text-white font-bold text-sm py-2 px-4 rounded-xl shadow transition hover:bg-slate-600">💵 Add Bill</button>
+                        </div>
+                    </div>
+
+                    {/* TOP SUMMARY AND TRIPLE-FILTER PANEL BOARD */}
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                        <div class="lg:col-span-1 bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-950 dark:to-slate-900 text-white rounded-3xl p-6 shadow-md border dark:border-slate-800">
+                            <span class="text-xs font-bold tracking-wider opacity-60 uppercase">All Households</span>
+                            <h2 class="text-2xl font-bold mt-1">All Accounts</h2>
+                            <div class="mt-8 flex items-baseline gap-1">
+                                <span class="text-xs opacity-60 uppercase">Pending:</span>
+                                <h3 class="text-3xl font-black text-emerald-400">₹{metrics.totalPendingAmount.toFixed(2)}</h3>
+                            </div>
+                            <p class="text-[11px] opacity-60 mt-1">Found {metrics.totalPendingCount} active un-settled statements</p>
+                        </div>
+
+                        {/* COMPREHENSIVE DUAL AND TRIPLE-STAGE SELECT MATRIX BOX */}
+                        <div class="lg:col-span-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col justify-between gap-4">
+                            <span class="text-xs font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">Multi-Criteria Filter Controls</span>
+                            
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Nickname</label>
+                                    <select value={selectedNickname} onChange={e=>setSelectedNickname(e.target.value)} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-sm font-medium focus:outline-none text-[#2C3E50] dark:text-[#E2E8F0]">
+                                        <option value="">All Nicknames</option>
+                                        {nicknames.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Category</label>
+                                    <select value={selectedCategory} onChange={e=>setSelectedCategory(e.target.value)} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-sm font-medium focus:outline-none text-[#2C3E50] dark:text-[#E2E8F0]">
+                                        <option value="">All Categories</option>
+                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Status Overrider</label>
+                                    <select value={selectedStatus} onChange={e=>setSelectedStatus(e.target.value)} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-sm font-medium focus:outline-none text-[#2C3E50] dark:text-[#E2E8F0]">
+                                        <option value="">Use Tab View</option>
+                                        <option value="pending">⏳ Pending Status</option>
+                                        <option value="paid">✅ Paid Ledger Only</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4 mt-1 text-center text-xs">
+                                <div class="bg-slate-50 dark:bg-[#121824] py-2 rounded-xl">
+                                    <span class="text-[10px] text-slate-400 font-bold block">UNIQUE SITES</span>
+                                    <span class="text-lg font-black text-slate-800 dark:text-slate-200">{metrics.accountsCount}</span>
+                                </div>
+                                <div class="bg-red-50 dark:bg-red-950/20 py-2 rounded-xl">
+                                    <span class="text-[10px] text-red-400 font-bold block">DUE ALERTS</span>
+                                    <span class="text-lg font-black text-red-600 dark:text-red-400">{metrics.activeAlertsCount}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* MAIN TAB SWITCH MATRIX */}
+                    <div class="flex border-b border-slate-200 dark:border-slate-800 mb-6 gap-2 text-sm font-bold">
+                        <button onClick={()=>{setActiveTab("active-bills"); setSelectedStatus("");}} class={`py-2 px-4 border-b-2 transition-all ${activeTab === "active-bills" && !selectedStatus ? "border-[#244235] text-[#244235] dark:border-emerald-500 dark:text-emerald-400" : "border-transparent text-slate-400 dark:text-slate-500"}`}>📂 Active Bills</button>
+                        <button onClick={()=>{setActiveTab("alerts"); setSelectedStatus("");}} class={`py-2 px-4 border-b-2 transition-all ${activeTab === "alerts" && !selectedStatus ? "border-amber-500 text-amber-600 dark:text-amber-400" : "border-transparent text-slate-400 dark:text-slate-500"}`}>⚠️ Alerts ({metrics.activeAlertsCount})</button>
+                        <button onClick={()=>{setActiveTab("payment-history"); setSelectedStatus("");}} class={`py-2 px-4 border-b-2 transition-all ${activeTab === "payment-history" && !selectedStatus ? "border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-transparent text-slate-400 dark:text-slate-500"}`}>📜 Payment History</button>
+                        <button onClick={()=>setActiveTab("manage-accounts")} class={`py-2 px-4 border-b-2 transition-all ${activeTab === "manage-accounts" ? "border-blue-500 text-blue-600 dark:border-blue-400" : "border-transparent text-slate-400 dark:text-slate-500"}`}>🛠️ Manage Accounts</button>
+                    </div>
+
+                    {/* MANAGE ACCOUNTS SHEET GRID */}
+                    {activeTab === "manage-accounts" ? (
+                        <div class="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+                            <h3 class="text-base font-bold mb-4 text-slate-800 dark:text-white">Master Account Profiles Inventory</h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-[#121824] text-slate-400 uppercase font-black tracking-wider">
+                                            <th class="p-3">Location Nickname</th>
+                                            <th class="p-3">Category</th>
+                                            <th class="p-3">Consumer ID No.</th>
+                                            <th class="p-3">Saved Pay VPA</th>
+                                            <th class="p-3 text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {rawAccountsList.map(acc => (
+                                            <tr key={acc.id} class="hover:bg-slate-50/50 dark:hover:bg-slate-900/40 text-slate-700 dark:text-slate-300">
+                                                <td class="p-3 font-bold text-slate-900 dark:text-white">{acc.account_nickname}</td>
+                                                <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-bold text-slate-500">{acc.category}</span></td>
+                                                <td class="p-3 font-mono">{acc.consumer_number}</td>
+                                                <td class="p-3 text-slate-400">{acc.official_vpa || '--'}</td>
+                                                <td class="p-3 text-center">
+                                                    <button onClick={() => removeAccountLine(acc.id)} class="text-red-500 hover:text-red-700 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 font-bold px-2.5 py-1 rounded-xl transition">🗑️ Remove Account</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {rawAccountsList.length === 0 && (
+                                            <tr>
+                                                <td colspan="5" class="p-8 text-center text-slate-400 italic">No registered utility profiles located. Add one at the top right to start.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : (
+                        <div class="grid gap-4">
+                            {bills.map(bill => {
+                                let phaseColor = "bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-800";
+                                let statusText = "Statement Active";
+                                let statusBadge = "bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300";
+
+                                if (bill.status === 'paid') {
+                                    phaseColor = "bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/30";
+                                    statusText = "✓ Settled";
+                                    statusBadge = "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300";
+                                } else if (bill.notification_phase === 'URGENT' || bill.notification_phase === 'OVERDUE') {
+                                    phaseColor = "bg-red-50 dark:bg-red-950/10 border-red-200 dark:border-red-900/30 ring-1 ring-red-400/20";
+                                    statusText = "🚨 Urgent Deadline";
+                                    statusBadge = "bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-400";
+                                } else if (bill.notification_phase === 'ACTION') {
+                                    phaseColor = "bg-amber-50 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/30";
+                                    statusText = "⚠️ Fine Window Open";
+                                    statusBadge = "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300";
+                                }
+
+                                return (
+                                    <div key={bill.id} class={`border p-5 rounded-2xl transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${phaseColor}`}>
+                                        <div>
+                                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                                <span class="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300">{bill.category}</span>
+                                                <span class={`text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded ${statusBadge}`}>{statusText}</span>
+                                            </div>
+                                            <h3 class="text-lg font-bold text-slate-900 dark:text-white">{bill.account_nickname} <span class="text-xs font-normal text-slate-400 dark:text-slate-500">(ID: {bill.consumer_number})</span></h3>
+                                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">Due Date: <span class="font-bold text-slate-800 dark:text-slate-200">{bill.due_date}</span> {bill.paid_date && `| Paid Date: ${bill.paid_date}`}</p>
+                                        </div>
+                                        <div class="flex md:flex-col items-end justify-between md:justify-center gap-2 border-t border-slate-100 dark:border-slate-800 md:border-0 pt-3 md:pt-0">
+                                            <div class="text-right">
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Statement Net</span>
+                                                <span class="text-xl font-black text-slate-950 dark:text-white">₹{bill.amount.toFixed(2)}</span>
+                                            </div>
+                                            {bill.status === 'pending' && (
+                                                <button onClick={()=>setPaymentModal(bill)} class="bg-[#244235] dark:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs">Pay Now</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {bills.length === 0 && (
+                                <div class="text-center py-12 bg-white dark:bg-[#1E293B] border border-dashed dark:border-slate-800 rounded-3xl text-slate-400 text-sm">No items found matching filter criteria.</div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* MODAL WINDOW 1: REGISTRATION */}
+                    {showAccountModal && (
+                        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                            <div class="bg-white dark:bg-[#1E293B] text-slate-800 dark:text-slate-200 rounded-3xl max-w-lg w-full p-6 shadow-xl animate-in fade-in duration-100">
+                                <div class="flex justify-between items-center mb-4 border-b dark:border-slate-700 pb-2">
+                                    <h3 class="text-xl font-bold">Add New Account Reference</h3>
+                                    <button onClick={()=>setShowAccountModal(false)} class="text-slate-400 text-xl">✕</button>
+                                </div>
+                                <form onSubmit={submitAccount} class="space-y-4 text-sm">
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Nickname reference</label>
+                                        <input type="text" placeholder="e.g. My House" value={accForm.nickname} onChange={e=>setAccForm({...accForm, nickname: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] focus:outline-none" required />
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Category Type</label>
+                                            <select value={accForm.category} onChange={e=>setAccForm({...accForm, category: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-white dark:bg-[#121824] focus:outline-none" required>
+                                                <option value="">Choose Category...</option>
+                                                {['Electricity', 'Water', 'Gas', 'Internet', 'Municipal/Home Tax', 'Sewage Tax', 'Credit Card Charges', 'Insurance Premiums', 'Loan EMIs', 'Custom'].map(c=><option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        {accForm.category === 'Custom' && (
+                                            <div>
+                                                <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Custom Label</label>
+                                                <input type="text" placeholder="Type Category" value={accForm.customCategory} onChange={e=>setAccForm({...accForm, customCategory: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] focus:outline-none" required />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Consumer / Identity Identification Number</label>
+                                        <input type="text" placeholder="Enter number sequence" value={accForm.consumerNum} onChange={e=>setAccForm({...accForm, consumerNum: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] focus:outline-none" required />
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">UPI Pay VPA ID</label>
+                                            <input type="text" placeholder="payee@upi" value={accForm.vpa} onChange={e=>setAccForm({...accForm, vpa: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Portal Payment Site URL</label>
+                                            <input type="url" placeholder="https://..." value={accForm.url} onChange={e=>setAccForm({...accForm, url: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="w-full bg-[#244235] dark:bg-emerald-700 text-white font-bold p-3 rounded-xl shadow-xs">Register Line</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL WINDOW 2: BILL ADD PANEL */}
+                    {showBillModal && (
+                        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                            <div class="bg-white dark:bg-[#1E293B] text-slate-800 dark:text-slate-200 rounded-3xl max-w-md w-full p-6 shadow-xl">
+                                <div class="flex justify-between items-center mb-4 border-b dark:border-slate-700 pb-2">
+                                    <h3 class="text-xl font-bold">Log Manual Statement</h3>
+                                    <button onClick={()=>setShowBillModal(false)} class="text-slate-400 text-xl">✕</button>
+                                </div>
+                                <form onSubmit={submitBill} class="space-y-4 text-sm">
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Select Connected Asset Line</label>
+                                        <select value={billForm.accountId} onChange={e=>setBillForm({...billForm, accountId: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-white dark:bg-[#121824] text-slate-800 dark:text-white focus:outline-none" required>
+                                            <option value="">Select account...</option>
+                                            {rawAccountsList.map((acc) => <option key={acc.id} value={acc.id}>{acc.account_nickname} ({acc.category})</option>)}
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Invoice Amount</label>
+                                            <input type="number" step="0.01" placeholder="₹" value={billForm.amount} onChange={e=>setBillForm({...billForm, amount: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-slate-800 dark:text-white focus:outline-none" required />
+                                        </div>
+                                        <div>
+                                            <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Late Action Fine</label>
+                                            <input type="number" step="0.01" placeholder="₹" value={billForm.fine} onChange={e=>setBillForm({...billForm, fine: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-slate-800 dark:text-white focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Due Target Date</label>
+                                        <input type="date" value={billForm.dueDate} onChange={e=>setBillForm({...billForm, dueDate: e.target.value})} class="w-full border dark:border-slate-700 p-2.5 rounded-xl bg-slate-50 dark:bg-[#121824] text-slate-800 dark:text-white focus:outline-none" required />
+                                    </div>
+                                    <button type="submit" class="w-full bg-[#7F8C8D] dark:bg-slate-600 text-white font-bold p-3 rounded-xl shadow-xs">Post Statement</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* PAYMENT CONNECTOR OUTBOUND POPUP MODAL */}
+                    {paymentModal && (
+                        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                            <div class="bg-white dark:bg-[#1E293B] border dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-xl">
+                                <h3 class="text-lg font-bold dark:text-white mb-2">🛡️ Outbound Direct Handoff Link</h3>
+                                <div class="bg-slate-50 dark:bg-[#121824] p-4 rounded-2xl mb-4 border border-slate-200 dark:border-slate-800 text-xs font-medium space-y-1">
+                                    <div class="flex justify-between"><span class="text-slate-400">Target Line:</span><span class="text-slate-800 dark:text-slate-200 font-bold">{paymentModal.account_nickname} ({paymentModal.category})</span></div>
+                                    <div class="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-2 mt-2"><span class="text-slate-500 font-bold">Total Due Value:</span><span class="text-slate-950 dark:text-white font-black text-sm">₹{paymentModal.amount.toFixed(2)}</span></div>
+                                </div>
+                                <div class="grid gap-2 mb-4">
+                                    <a href={`upi://pay?pa=${paymentModal.official_vpa || 'payee@upi'}&pn=${encodeURIComponent(paymentModal.account_nickname)}&am=${paymentModal.amount}&cu=INR`} onClick={()=>executePayment(paymentModal.id)} class="w-full text-center bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs transition shadow-sm">Launch Native UPI App Intent</a>
+                                    <a href={paymentModal.portal_url || "https://google.com"} target="_blank" rel="noopener noreferrer" onClick={()=>executePayment(paymentModal.id)} class="w-full text-center bg-slate-900 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 rounded-xl text-xs transition shadow-sm">Navigate Official Provider Portal</a>
+                                </div>
+                                <button onClick={()=>setPaymentModal(null)} class="w-full border border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 py-2.5 rounded-xl text-xs font-bold transition">Cancel Connection</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
